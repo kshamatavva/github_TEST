@@ -4,3 +4,14 @@ author: "Kshama Tavva"
 date: "2026-10-06"
 output: html_document
 ---
+```{r}
+library(gssrdoc)
+library(gssr)
+gss<-gss_get_yr(year='2024')
+wt_vars <- c("vpsu",     # PSU
+             "vstrat",   # Strata          
+             "wtssps",   # Weights
+             "wtssnrps"  #  Weights with non-response adjustment
+             )   
+```
+
