@@ -1,0 +1,173 @@
+---
+title: in class project
+author: "Yomarilis gueits Rodriguez"
+format: 
+  html: 
+   toc: true
+   self-contained: true
+   df-print: paged
+   code-link: true
+lightbox: true
+---
+# Load Packages/Data
+
+library(tidyverse)
+library(gssr)
+library(haven)
+
+# Load full GSS cumulative dataset 
+data(gss_all)
+
+# Filter Data/ Clean Core Variables
+gss_analyst <- gss_all |>
+  # Select core political, abortion policy, and demographic variables
+  select(year, age, sex, polviews, partyid, abany) |>
+  
+  # Zap survey missing values (e.g., "Don't Know", "Refused")
+  mutate(across(everything(), haven::zap_missing)) |>
+  
+  # Recode and group variables into clean, human-readable categories
+  mutate(
+    # Calculate approximate birth year
+    birth_year = as.numeric(year) - as.numeric(age),
+    
+    # Categorize into Generational Cohorts
+    generation = case_when(
+      birth_year >= 1997 ~ "Gen Z",
+      birth_year >= 1981 & birth_year <= 1996 ~ "Millennial",
+      birth_year >= 1965 & birth_year <= 1980 ~ "Gen X",
+      birth_year >= 1946 & birth_year <= 1964 ~ "Baby Boomer",
+      birth_year < 1946 ~ "Silent/Prior"
+    ),
+    generation = factor(generation, levels = c("Silent/Prior", "Baby Boomer", "Gen X", "Millennial", "Gen Z")),
+    
+    # Variable 1: Political Ideology (Grouped from 7-point scale)
+    ideology = case_when(
+      as.numeric(polviews) %in% 1:3 ~ "Liberal",
+      as.numeric(polviews) == 4     ~ "Moderate",
+      as.numeric(polviews) %in% 5:7 ~ "Conservative"
+    ),
+    
+    # Variable 2: Party Identification (Grouped from 7-point scale)
+    party_affiliation = case_when(
+      as.numeric(partyid) %in% 0:2 ~ "Democrat / Lean Dem",
+      as.numeric(partyid) == 3     ~ "Independent",
+      as.numeric(partyid) %in% 4:6 ~ "Republican / Lean Rep"
+    ),
+    
+    # Variable 3: Abortion Policy Stance (abany - Abortion for Any Reason)
+    abortion_view = case_when(
+      as.numeric(abany) == 1 ~ "Allow for Any Reason",
+      as.numeric(abany) == 2 ~ "Restrict / Oppose"
+    ),
+    
+    # Demographic Moderator: Gender
+    gender = case_when(
+      as.numeric(sex) == 1 ~ "Male",
+      as.numeric(sex) == 2 ~ "Female"
+    )
+  ) |>
+  
+  # Filter to young adults aged 18 to 25 ONLY for an accurate life-stage comparison
+  filter(as.numeric(age) >= 18 & as.numeric(age) <= 25, !is.na(generation))
+
+#1. Calculate overall survey year range per generation first
+gen_years <- gss_analyst |>
+  filter(!is.na(ideology)) |>
+  group_by(generation) |>
+  summarize(
+    start_year = min(as.numeric(year)),
+    end_year = max(as.numeric(year)),
+    .groups = "drop"
+  )
+
+# Table 1: Overall Ideology across Generations (Ages 18–25)
+ideology_table <- gss_analyst |>
+  filter(!is.na(ideology)) |>
+  group_by(generation, ideology) |>
+  summarize(n = n(), .groups = "drop_last") |>
+  mutate(percent = round((n / sum(n)) * 100, 1)) |>
+  left_join(gen_years, by = "generation") |>
+  mutate(
+    years_sampled = paste0(start_year, "–", end_year),
+    axis_label = paste0(generation, "\n(", start_year, "–", end_year, ")"),
+    # Enforce strict chronological order on the X-axis (Boomer -> Gen X -> Millennial -> Gen Z)
+    axis_label = fct_reorder(axis_label, as.numeric(generation))
+  )
+
+print(select(ideology_table, generation, years_sampled, ideology, n, percent))
+
+# Table 2: Party Identification across Generations (Ages 18–25)
+party_table <- gss_analyst |>
+  filter(!is.na(party_affiliation)) |>
+  group_by(generation, party_affiliation) |>
+  summarize(n = n(), .groups = "drop_last") |>
+  mutate(percent = round((n / sum(n)) * 100, 1))
+
+print(party_table)
+
+# Table 3: Abortion Policy View across Generations (Ages 18–25)
+abortion_table <- gss_analyst |>
+  filter(!is.na(abortion_view)) |>
+  group_by(generation, abortion_view) |>
+  summarize(n = n(), .groups = "drop_last") |>
+  mutate(percent = round((n / sum(n)) * 100, 1))
+
+print(abortion_table)
+
+# Table 4: Key Demographic Factor — Gen Z Ideology split by Gender
+genz_gender_table <- gss_analyst |>
+  filter(generation == "Gen Z", !is.na(ideology), !is.na(gender)) |>
+  group_by(gender, ideology) |>
+  summarize(n = n(), .groups = "drop_last") |>
+  mutate(percent = round((n / sum(n)) * 100, 1))
+
+print(genz_gender_table)
+
+# Chart 1: Ideology Across Generations (Chronological & Unified Groups)
+ggplot(ideology_table, aes(x = axis_label, y = percent, fill = ideology)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("Liberal" = "#2B5C8F", "Moderate" = "#708090", "Conservative" = "#D95F02")) +
+  labs(
+    title = "Political Ideology of Young Adults (Ages 18–25) Across Generations",
+    subtitle = "Comparing ideological self-identification at the exact same life stage",
+    x = "Generational Cohort & Survey Period",
+    y = "Percentage (%)",
+    fill = "Ideology"
+  ) +
+  theme_minimal()
+
+# Save Chart 1
+ggsave("chart1_ideology_across_generations.png", width = 9, height = 5, dpi = 300)
+
+# Chart 2: Views on Abortion Access Across Generations (Ages 18–25)
+ggplot(abortion_table, aes(x = generation, y = percent, fill = abortion_view)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("Allow for Any Reason" = "#2E8B57", "Restrict / Oppose" = "#B22222")) +
+  labs(
+    title = "Support for Abortion Access (Ages 18–25) Across Generations",
+    subtitle = "Comparing approval for abortion for any reason at age 18–25",
+    x = "Generational Cohort",
+    y = "Percentage (%)",
+    fill = "Abortion Stance"
+  ) +
+  theme_minimal()
+
+# Save Chart 2
+ggsave("chart2_abortion_policy_trend.png", width = 8, height = 5, dpi = 300)
+
+# Chart 3: Gen Z Ideology Split by Gender (Young Adults Ages 18–25)
+ggplot(genz_gender_table, aes(x = gender, y = percent, fill = ideology)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("Liberal" = "#2B5C8F", "Moderate" = "#708090", "Conservative" = "#D95F02")) +
+  labs(
+    title = "Gen Z Political Ideology by Gender (Ages 18–25)",
+    subtitle = "Comparing ideological self-identification between Gen Z men and women",
+    x = "Gender",
+    y = "Percentage (%)",
+    fill = "Ideology"
+  ) +
+  theme_minimal()
+
+# Save Chart 3
+ggsave("chart3_genz_gender_divide.png", width = 8, height = 5, dpi = 300)

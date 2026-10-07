@@ -1,0 +1,105 @@
+---
+title: "Homework 5: Survey Data"
+format:
+  html:
+    toc: true
+    df-print: kable
+    code-tools: true
+    embed-resources: true
+---
+
+```{=html}
+<style>
+.qbox {
+  background-color: #cccccc; 
+  padding: 20px; 
+  border: 1px solid #999999; 
+  border-left: 10px solid teal; 
+  border-radius: 10px;
+  margin: 10px;
+}
+
+</style>
+```
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+You'll use data from the 2024 round of the General Social Survey to answer these questions. Scroll to @sec-codebook at the end of this document for some additional details on the variables you'll need to complete this analysis.
+
+# Data import
+
+You can download GSS data [directly from their website](https://gss.norc.org/us/en/gss/get-the-data.html), but Kieran Healy [has created an R package](https://kjhealy.github.io/gssr/) that will automatically import `GSS` data into R and provides some additional helper functions for working with the data.
+
+Download the `gssr` and `gssrdoc` packages by running the code below:
+
+```{r, eval=FALSE}
+install.packages('gssr', repos =
+  c('https://kjhealy.r-universe.dev', 'https://cloud.r-project.org'))
+
+install.packages('gssrdoc', repos =
+  c('https://kjhealy.r-universe.dev', 'https://cloud.r-project.org'))
+
+```
+
+Then you'll want to run the code below to set up your data for analysis.
+
+```{r}
+library(tidyverse)
+library(srvyr)
+library(gssr)
+library(gssrdoc)
+library(haven)
+gss<-gss_get_yr(year='2024')
+wt_vars <- c("vpsu",     # PSU
+             "vstrat",   # Strata          
+             "wtssps",   # Weights
+             "wtssnrps"  #  Weights with non-response adjustment
+             )   
+
+# removing user-missing values and converting the weights to numeric
+gss<-gss|>
+  zap_missing()|>
+  mutate(across(wt_vars, .fns=~as.numeric(.x)))
+
+```
+
+```{r}
+
+library(gssr)
+library(dplyr)
+
+data(gss_all, package = "gssr")   # loads the full object into memory
+
+vars <- c("year", "age", "cohort", "sex", "race", "polviews", "partyid",
+          "attend", "degree", "wtssall", "vstrat", "vpsu")
+
+gss <- gss_all |>
+  select(any_of(vars)) |>
+  filter(year >= 2000) |>
+  mutate(across(everything(), ~ as.numeric(haven::zap_labels(.x))))
+
+rm(gss_all); gc()   # free the big object right away
+table(gss$year)
+```
+
+```{r}
+library(ggplot2)
+
+conservative = case_when(gss$polviews >= 5 ~ 1, gss$polviews %in% 1:4 ~ 0)
+# Percent conservative, by year and generation (ages 18-27)
+yr <- svyby(~conservative, ~year + generation, young, svymean, na.rm = TRUE)
+
+ggplot(yr, aes(x = year, y = conservative * 100, color = generation)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = (conservative - 1.96 * se) * 100,
+                    ymax = (conservative + 1.96 * se) * 100),
+                width = 0.5, alpha = 0.5) +
+  labs(title = "Percent conservative among ages 18-27, by generation",
+       x = "Survey year", y = "% conservative", color = NULL) +
+  theme_minimal()
+```

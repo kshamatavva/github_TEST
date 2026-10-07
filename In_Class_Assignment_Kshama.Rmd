@@ -1,0 +1,80 @@
+---
+title: "In Class Assignment"
+author: "Kshama Tavva"
+date: "2026-10-06"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(srvyr)
+library(gssr)
+library(gssrdoc)
+library(haven)
+data(gss_all)
+wt_vars <- c("vpsu",     # PSU
+             "vstrat",   # Strata          
+             "wtssps",   # Weights
+             "wtssnrps"  #  Weights with non-response adjustment
+             )   
+gss_all<-gss_all|>
+  zap_missing()|>
+  mutate(across(wt_vars, .fns=~as.numeric(.x)))
+head(gss_all)
+
+```
+### Question 2
+
+Is Gen Z more conservative compared to previous generations?
+
+If this trend exists, does it match trends in specific policy views or cultural beliefs, party ID, or overall assessments of specific politicians or groups?
+
+What are some individual factors that have typically been associated with a more/less conservative lean among younger adults? Are there differences across demographic groups?
+
+```{r}
+library(srvyr)
+#svyggs<-gss_all|>
+ # filter(!is.na(vpsu))|>
+ # filter(!is.na(cohort))|>
+  #filter(!is.na(partyid))|>
+  #filter(!is.na(polviews))|>
+#  filter(!is.na(homosex))|>
+ # as_survey_design(
+  #  ids=vpsu,
+   # strata=vstrat,
+    #weights = wtssnrps,
+  #  nest=TRUE
+#  )
+```
+
+```{r}
+vars<-c("year","age","cohort","sex", "race","polviews", "partyid",
+        "attend","degree","wtssnrps","vstrat","vpsu")
+gss<-gss_all|>
+  select(any_of(vars))|>
+  mutate(across(everything(), ~as.numeric(haven::zap_labels(.x))))
+rm(gss_all);gc()
+gss
+```
+
+```{r}
+gss2<-gss|>
+  mutate(partyid_recode=recode_values(partyid, 1~"Democrat",2~"Democrat",3~"Democrat",4~"Independent",5~"Republican",6~"Republican",7~"Other"))|>
+  filter(!is.na(partyid))|>
+  mutate(generation=case_when(
+     cohort >= 1928 & cohort <= 1945 ~ "Silent Generation",
+     cohort >= 1946 & cohort <= 1964 ~ "Baby Boomer",
+     cohort >= 1965 & cohort <= 1980 ~ "Generation X",
+     cohort >= 1981 & cohort <= 1996 ~ "Millennials",
+     cohort >= 1997 & cohort <= 2012 ~ "Generation Z",
+  ))
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(data=gss2,mapping = aes(x=year,y=partyid_recode, color=generation ))+geom_line()+
+  geom_point()+
+  labs(title = "Party Identification Over Time")+
+  xlab("Party_Identification")
+```
+
