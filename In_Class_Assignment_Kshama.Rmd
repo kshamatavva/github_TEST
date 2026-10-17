@@ -4,6 +4,16 @@ author: "Kshama Tavva"
 date: "2026-10-06"
 output: html_document
 ---
+
+2. Gen Z conservatism
+
+Is Gen Z more conservative compared to previous generations?
+
+If this trend exists, does it match trends in specific policy views or cultural beliefs, party ID, or overall assessments of specific politicians or groups?
+
+What are some individual factors that have typically been associated with a more/less conservative lean among younger adults? Are there differences across demographic groups?
+
+
 ```{r}
 library(tidyverse)
 library(srvyr)
@@ -31,24 +41,8 @@ If this trend exists, does it match trends in specific policy views or cultural 
 What are some individual factors that have typically been associated with a more/less conservative lean among younger adults? Are there differences across demographic groups?
 
 ```{r}
-library(srvyr)
-#svyggs<-gss_all|>
- # filter(!is.na(vpsu))|>
- # filter(!is.na(cohort))|>
-  #filter(!is.na(partyid))|>
-  #filter(!is.na(polviews))|>
-#  filter(!is.na(homosex))|>
- # as_survey_design(
-  #  ids=vpsu,
-   # strata=vstrat,
-    #weights = wtssnrps,
-  #  nest=TRUE
-#  )
-```
-
-```{r}
 vars<-c("year","age","cohort","sex", "race","polviews", "partyid",
-        "attend","degree","wtssnrps","vstrat","vpsu")
+        "attend","degree","wtssnrps","vstrat","vpsu","wtssps")
 gss<-gss_all|>
   select(any_of(vars))|>
   mutate(across(everything(), ~as.numeric(haven::zap_labels(.x))))
@@ -71,10 +65,46 @@ gss2<-gss|>
 
 
 ```{r}
-library(ggplot2)
-ggplot(data=gss2,mapping = aes(x=year,y=partyid_recode, color=generation ))+geom_line()+
-  geom_point()+
-  labs(title = "Party Identification Over Time")+
-  xlab("Party_Identification")
+options(survey.lonely.psu = "adjust")
+ideology_gss <- gss2 |>
+  filter(!is.na(polviews),
+         !is.na(vpsu),
+         !is.na(wtssnrps),
+         wtssnrps>0) |>
+  mutate(
+    conservative = if_else(polviews >= 5, 1, 0)
+  ) |>
+  as_survey_design(
+    ids = vpsu,
+    strata = vstrat,
+    
+    weights = wtssnrps,
+    nest = TRUE
+  )
+ideology_trend <- ideology_gss |>
+  group_by(year, generation) |>
+  summarise(
+    conservative_share = survey_mean(
+      conservative
+    )
+  )|>
+  ungroup()
+
+ggplot(
+  ideology_trend,
+  aes(
+    x = year,
+    y = conservative_share,
+    color = generation
+  )
+) +
+  geom_line() +
+  labs(
+    title = "% Identifying as Conservative Across Generations",
+    x = "Survey Year",
+    y = "% Identifying as Conservative",
+    color = "Generation"
+  ) +
+  theme_minimal()
 ```
 
