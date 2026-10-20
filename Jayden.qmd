@@ -50,6 +50,7 @@ Then you'll want to run the code below to set up your data for analysis.
 ```{r}
 library(tidyverse)
 library(srvyr)
+library(survey)
 library(gssr)
 library(gssrdoc)
 library(haven)
@@ -87,19 +88,95 @@ table(gss$year)
 ```
 
 ```{r}
+
+library(gssr)
+library(dplyr)
+
+data(gss_all, package = "gssr")   # loads the full object into memory
+
+vars <- c("year", "age", "cohort", "sex", "race", "polviews", "partyid",
+          "attend", "degree", "wtssall", "vstrat", "vpsu")
+
+gss <- gss_all |>
+  select(any_of(vars)) |>
+  filter(year >= 1972) |>
+  mutate(across(everything(), ~ as.numeric(haven::zap_labels(.x))))
+
+rm(gss_all); gc()   # free the big object right away
+table(gss$year)
+
+
 library(ggplot2)
+library(survey)
+library(dplyr)
 
-conservative = case_when(gss$polviews >= 5 ~ 1, gss$polviews %in% 1:4 ~ 0)
+options(survey.lonely.psu = "adjust") #this gets rid of the error that i kept getting
+
+gss <- gss |> filter(!is.na(wtssall), !is.na(vpsu), !is.na(vstrat)) #Keeps only people who have a weight, a PSU, and a stratum
+#making the generations,sex, and conservative/republican
+gss <- gss |>
+  mutate(
+    generation = case_when(
+      year - age >= 1997 ~ "Gen Z",
+      year - age >= 1981 ~ "Millennial",
+      year - age >= 1965 ~ "Gen X",
+      year - age >= 1946 ~ "Boomer"),
+    sex = factor(sex, labels = c("Men", "Women")),
+    conservative = case_when(polviews >= 5 ~ 1, polviews %in% 1:4 ~ 0),
+    republican   = case_when(partyid %in% 4:6 ~ 1, partyid %in% 0:3 ~ 0)
+  )
+
+#this accounts the survey design
+des <- svydesign(ids = ~vpsu, strata = ~vstrat, weights = ~wtssall,
+                 data = gss, nest = TRUE)
+
+#Keep only ages 18-27 with a known generation
+young <- subset(des, age >= 18 & age <= 27 & !is.na(generation))
+
+
+
 # Percent conservative, by year and generation (ages 18-27)
-yr <- svyby(~conservative, ~year + generation, young, svymean, na.rm = TRUE)
+yr_cons <- svyby(~conservative, ~year + generation, young, svymean, na.rm = TRUE)
 
-ggplot(yr, aes(x = year, y = conservative * 100, color = generation)) +
+#this plots for conservative
+ggplot(yr_cons, aes(x = year, y = conservative * 100, color = generation)) +
   geom_line() +
   geom_point() +
   geom_errorbar(aes(ymin = (conservative - 1.96 * se) * 100,
                     ymax = (conservative + 1.96 * se) * 100),
-                width = 0.5, alpha = 0.5) +
+                width = 0.5, alpha = 0.3) +
   labs(title = "Percent conservative among ages 18-27, by generation",
        x = "Survey year", y = "% conservative", color = NULL) +
+  theme_minimal()
+
+# Percent republican, by year and generation (ages 18-27)
+yr_rep  <- svyby(~republican,   ~year + generation, young, svymean, na.rm = TRUE)
+
+#plot for republican
+ggplot(yr_rep, aes(x = year, y = republican * 100, color = generation)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = (republican - 1.96 * se) * 100,
+                    ymax = (republican + 1.96 * se) * 100),
+                width = 0.5, alpha = 0.3) +
+  labs(title = "Percent Republican among ages 18-27, by generation",
+       x = "Survey year", y = "% Republican", color = NULL) +
+  theme_minimal()
+
+#this puts conservative and republican together
+yr_all <- bind_rows(
+  yr_cons |> rename(est = conservative) |> mutate(measure = "Conservative"),
+  yr_rep  |> rename(est = republican)   |> mutate(measure = "Republican")
+)
+
+#plots both to show an overlap
+ggplot(yr_all, aes(x = year, y = est * 100, color = generation, linetype = measure)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = (est - 1.96 * se) * 100,
+                    ymax = (est + 1.96 * se) * 100),
+                width = 0.5, alpha = 0.3) +
+  labs(title = "Conservative and Republican identification, ages 18-27, by generation",
+       x = "Survey year", y = "Percent", color = NULL, linetype = NULL) +
   theme_minimal()
 ```
